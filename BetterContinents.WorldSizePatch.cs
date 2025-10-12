@@ -6,7 +6,6 @@ namespace BetterContinents;
 
 public class WorldSizeHelper
 {
-
   private static bool EdgeCheckPatched = false;
   private static bool WorldSizePatched = false;
   private static float WorldRadius = 0f;
@@ -28,6 +27,8 @@ public class WorldSizeHelper
     PatchScaleGlobalWaterSurface(harmony);
     PatchUpdateWind(harmony);
     PatchWaterSurface(harmony);
+    PatchBiomeHeight(harmony);
+    PatchGetBaseHeight(harmony);
   }
 
   private static void PatchApplyEdgeForce(Harmony harmony)
@@ -73,7 +74,7 @@ public class WorldSizeHelper
   {
     var method = AccessTools.Method(typeof(WaterVolume), nameof(WaterVolume.SetupMaterial));
     var prefix = AccessTools.Method(typeof(WorldSizeHelper), nameof(SetupMaterialPrefix));
-    if (WorldSizePatched)
+    if (EdgeCheckPatched)
     {
       harmony.Patch(method, prefix: new HarmonyMethod(prefix));
     }
@@ -85,7 +86,7 @@ public class WorldSizeHelper
   }
   private static void RefreshSetupMaterial()
   {
-    var objects = Object.FindObjectsOfType<WaterVolume>();
+    var objects = Object.FindObjectsByType<WaterVolume>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
     foreach (var water in objects)
     {
       water.m_waterSurface.material.SetFloat("_WaterEdge", WorldTotalRadius);
@@ -99,7 +100,7 @@ public class WorldSizeHelper
   {
     var method = AccessTools.Method(typeof(EnvMan), nameof(EnvMan.Awake));
     var postfix = AccessTools.Method(typeof(WorldSizeHelper), nameof(ScaleGlobalWaterSurfacePostFix));
-    if (WorldSizePatched)
+    if (EdgeCheckPatched)
     {
       harmony.Patch(method, postfix: new HarmonyMethod(postfix));
     }
@@ -122,7 +123,7 @@ public class WorldSizeHelper
   {
     var method = AccessTools.Method(typeof(EnvMan), nameof(EnvMan.UpdateWind));
     var transpiler = AccessTools.Method(typeof(WorldSizeHelper), nameof(UpdateWindTranspiler));
-    if (WorldSizePatched)
+    if (EdgeCheckPatched)
       harmony.Patch(method, transpiler: new HarmonyMethod(transpiler));
     else
       harmony.Unpatch(method, transpiler);
@@ -150,18 +151,24 @@ public class WorldSizeHelper
   private static void PatchWaterSurface(Harmony harmony)
   {
     var method = AccessTools.Method(typeof(WaterVolume), nameof(WaterVolume.GetWaterSurface));
-    var transpiler = AccessTools.Method(typeof(WorldSizeHelper), nameof(GetWaterSurfaceTranspiler));
+    var transpiler = AccessTools.Method(typeof(WorldSizeHelper), nameof(ReplaceTotalSize));
     if (WorldSizePatched)
       harmony.Patch(method, transpiler: new HarmonyMethod(transpiler));
     else
       harmony.Unpatch(method, transpiler);
   }
 
-  private static IEnumerable<CodeInstruction> GetWaterSurfaceTranspiler(IEnumerable<CodeInstruction> instructions)
+  private static IEnumerable<CodeInstruction> ReplaceTotalSize(IEnumerable<CodeInstruction> instructions)
+    => Replace(new(instructions), 10500f, WorldTotalRadius).InstructionEnumeration();
+
+  private static void PatchBiomeHeight(Harmony harmony)
   {
-    CodeMatcher matcher = new(instructions);
-    matcher = Replace(matcher, 10500f, WorldTotalRadius);
-    return matcher.InstructionEnumeration();
+    var method = AccessTools.Method(typeof(WorldGenerator), nameof(WorldGenerator.GetBiomeHeight));
+    var transpiler = AccessTools.Method(typeof(WorldSizeHelper), nameof(ReplaceTotalSize));
+    if (EdgeCheckPatched)
+      harmony.Patch(method, transpiler: new HarmonyMethod(transpiler));
+    else
+      harmony.Unpatch(method, transpiler);
   }
 
   public static void PatchWorldSize(Harmony harmony, float worldSize, float edgeSize)
@@ -173,7 +180,6 @@ public class WorldSizeHelper
     WorldTotalRadius = WorldRadius + EdgeSize;
     WorldSizePatched = toPatch;
     PatchGetAshlandsHeight(harmony);
-    PatchGetBaseHeight(harmony);
     if (toPatch) EWD.RefreshSize(WorldRadius, WorldTotalRadius, WorldStretch, BiomeStretch);
   }
   private static void PatchGetAshlandsHeight(Harmony harmony)
@@ -196,7 +202,7 @@ public class WorldSizeHelper
   {
     var method = AccessTools.Method(typeof(WorldGenerator), nameof(WorldGenerator.GetBaseHeight));
     var patch = AccessTools.Method(typeof(WorldSizeHelper), nameof(GetBaseHeightTranspiler));
-    if (WorldSizePatched)
+    if (EdgeCheckPatched)
       harmony.Patch(method, transpiler: new HarmonyMethod(patch));
     else
       harmony.Unpatch(method, patch);

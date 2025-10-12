@@ -139,10 +139,10 @@ internal class ImageMapSpawn() : ImageMapBase
     return Entries[index];
   }
 
-  public void SanityCheck(ZNetScene scene)
+  public void LoadPrefabs(ZNetScene scene)
   {
     foreach (var entry in Entries)
-      entry.SanityCheck(scene);
+      entry.LoadPrefabs(scene);
   }
 
   protected override bool LoadTextureToMap<T>(Image<T> image)
@@ -189,51 +189,74 @@ internal class SpawnEntry
 {
   private readonly HashSet<string> Enabled = [];
   private readonly HashSet<string> Disabled = [];
-  private readonly bool? All;
+  private readonly HashSet<string> Excluded = [];
+  private bool Reset = false;
   public readonly string Data;
 
   public SpawnEntry(string data)
   {
     Data = data;
-    var parts = data.Split(',').Select(s => s.Trim());
+    // On world load, ZNetScene is not loaded yet and will be handled later.
+    // On image reload, ZNetScene is already loaded.
+    if (ZNetScene.instance)
+      LoadPrefabs(ZNetScene.instance);
+  }
+
+  public bool HasEnabled(string name) => Enabled.Contains(name);
+
+  public bool HasDisabled(string name) => Disabled.Contains(name) || (Reset && !Excluded.Contains(name) && !Enabled.Contains(name));
+
+  private enum Operation
+  {
+    Enable,
+    Disable,
+    Exclude
+  }
+  public void LoadPrefabs(ZNetScene scene)
+  {
+    var parts = Data.Split(',').Select(s => s.Trim());
+    Reset = false;
     foreach (var part in parts)
     {
-      if (part == "all")
-        All = true;
-      else if (part == "none")
-        All = false;
-      else if (part.StartsWith("-"))
-        Disabled.Add(part.Substring(1));
-      else
-        Enabled.Add(part);
-    }
-  }
-
-  public void SanityCheck(ZNetScene scene)
-  {
-    // Process Enabled patterns
-    foreach (var name in Enabled.ToArray())
-    {
-      Enabled.Remove(name);
-      var matches = SanityCheck(scene, name);
-      foreach (var match in matches)
+      if (part == "none")
       {
-        Enabled.Add(match);
+        Reset = true;
+        continue;
+      }
+      var op = Operation.Exclude;
+      var prefab = part;
+      if (prefab.StartsWith("-"))
+      {
+        op = Operation.Disable;
+        prefab = prefab.Substring(1);
+      }
+      if (prefab.StartsWith("+"))
+      {
+        op = Operation.Enable;
+        prefab = prefab.Substring(1);
+      }
+      var prefabs = GetPrefabs(scene, prefab);
+      foreach (var name in prefabs)
+      {
+        Enabled.Remove(name);
+        Disabled.Remove(name);
+        Excluded.Remove(name);
+        switch (op)
+        {
+          case Operation.Enable:
+            Enabled.Add(name);
+            break;
+          case Operation.Disable:
+            Disabled.Add(name);
+            break;
+          case Operation.Exclude:
+            Excluded.Add(name);
+            break;
+        }
       }
     }
-
-    // Process Disabled patterns
-    foreach (var name in Disabled.ToArray())
-    {
-      Disabled.Remove(name);
-      var matches = SanityCheck(scene, name);
-      foreach (var match in matches)
-      {
-        Disabled.Add(match);
-      }
-    }
   }
-  private IEnumerable<string> SanityCheck(ZNetScene scene, string name)
+  private IEnumerable<string> GetPrefabs(ZNetScene scene, string name)
   {
     // Check if this is a wildcard pattern
     if (name.Contains("*"))
@@ -301,9 +324,5 @@ internal class SpawnEntry
     return false;
   }
 
-
-  public bool HasEnabled(string name) => Enabled.Contains(name) || (All == true && !Disabled.Contains(name));
-
-  public bool HasDisabled(string name) => Disabled.Contains(name) || (All == false && !Enabled.Contains(name));
 
 }

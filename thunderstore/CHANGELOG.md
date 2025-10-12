@@ -5,6 +5,7 @@
   - Improves config settings layout.
   - Minor optimizations.
   - Fixes index out of range error when going out of map bounds.
+  - Fixes "Disable map drop off" not working.
 
 - v0.7.29
   - Fixes some worlds not working.

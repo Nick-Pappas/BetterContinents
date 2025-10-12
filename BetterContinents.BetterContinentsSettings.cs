@@ -906,12 +906,12 @@ public partial class BetterContinents
       SpawnMap.CreateMap();
     }
 
-    public void SanityCheck(ZNetScene scene)
+    public void LoadPrefabs(ZNetScene scene)
     {
       if (SpawnMap != null)
-        SpawnMap.SanityCheck(scene);
+        SpawnMap.LoadPrefabs(scene);
       if (VegetationMap != null)
-        VegetationMap.SanityCheck(scene);
+        VegetationMap.LoadPrefabs(scene);
     }
   }
 }
