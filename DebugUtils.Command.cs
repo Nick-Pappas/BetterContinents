@@ -134,72 +134,88 @@ public partial class DebugUtils
         }
 
         public bool Run(string text)
+{
+    // 1. Determine if this command is the target or just the prefix
+    bool hasArgs = text.StartsWith(cmd + " ");
+    if (!hasArgs && text != cmd)
+    {
+        return false;
+    }
+
+    // Extract the remaining string after the current command keyword
+    string args = hasArgs ? text.Substring(cmd.Length).Trim() : string.Empty;
+
+    // 2. Handle GROUP types (e.g., "bc hl", "bc g")
+    // These contain other subcommands and act as folders.
+    if (commandType == CommandType.Group)
+    {
+        if (!hasArgs)
         {
-            bool hasArgs = text.StartsWith(cmd + " ");
-            if (!hasArgs && text != cmd)
+            // If the user just typed the group name, show the list of contents
+            ShowSubcommandHelp();
+        }
+        else if (!GetSubcommands().Any(subcmd => subcmd.Run(args)))
+        {
+            // If arguments were provided but didn't match any child, show error
+            Console.instance.Print($"<color=#ff0000>Error: argument {args} is not recognized as a subcommand of {cmd}</color>");
+            ShowSubcommandHelp();
+        }
+    }
+    // 3. Handle COMMAND types (e.g., "bc info")
+    // These execute a specific action (Action<object> setValue).
+    else if (commandType == CommandType.Command)
+    {
+        // Execute the action immediately using the remaining args
+        setValue(args);
+    }
+    // 4. Handle VALUE types (e.g., "bc hl 0 n fq")
+    // These represent specific settings (floats, ints, enums).
+    else if (commandType == CommandType.Value)
+    {
+        try
+        {
+            if (hasArgs)
             {
-                return false;
-            }
-            string args = hasArgs ? text.Substring(cmd.Length).Trim() : string.Empty;
-            if (commandType == CommandType.Group)
-            {
-                if (!hasArgs)
+                // SETTING A VALUE: The user provided an argument to change the setting
+                if (valueType.IsEnum)
                 {
-                    ShowSubcommandHelp();
+                    // Use your fix for case-insensitive Enum parsing
+                    setValue(Enum.Parse(valueType, args, ignoreCase: true));
                 }
-                else if (!GetSubcommands().Any(subcmd => subcmd.Run(args)))
+                else if (StringToTypeConverters.TryGetValue(valueType, out var parser))
                 {
-                    Console.instance.Print($"<color=#ff0000>Error: argument {args} is not recognized as a subcommand of {cmd}</color>");
-                    ShowSubcommandHelp();
-                }
-            }
-            else if (commandType == CommandType.Command)
-            {
-                if (args == "help")
-                {
-                    ShowSubcommandHelp();
+                    // Use standard primitive parsers
+                    setValue(parser(args));
                 }
                 else
                 {
-                    setValue(args);
+                    throw new InvalidOperationException($"No parser registered for type {valueType}");
                 }
             }
-            else if (commandType == CommandType.Value)
+            else
             {
-                try
+                // DISPLAYING A VALUE: The user just typed the name (e.g., "bc hl 0 n fq")
+                if (getValue == null)
                 {
-                    if (hasArgs)
-                    {
-                        var argStr = text.Substring(cmd.Length).Trim();
-                        if (valueType.IsEnum)
-                        {
-                            setValue(Enum.Parse(valueType, argStr, ignoreCase: true));
-                        }
-                        else if (StringToTypeConverters.TryGetValue(valueType, out var parser))
-                        {
-                            setValue(parser(argStr));
-                        }
-                        else
-                        {
-                            throw new InvalidOperationException($"No parser registered for type {valueType}");
-                        }
-                    }
-                    else if (getValue == null)
-                    {
-                        Console.instance.Print($"(value is write only, can't show the current value");
-                    }
-                    else
-                    {
-                        ShowSubcommandHelp();
-                    }
+                    Console.instance.Print($"(value is write only, can't show the current value)");
                 }
-                catch (Exception ex)
+                else
                 {
-                    Console.instance.Print($"{cmd} failed: {ex.Message}");
+                    // We call ShowHelp() instead of ShowSubcommandHelp().
+                    // This prints the command name, type, current value, and description.
+                    ShowHelp();
                 }
             }
-            return true;
         }
+        catch (Exception ex)
+        {
+            // Catch parsing errors (e.g., typing "abc" for a float) and print clearly
+            Console.instance.Print($"{cmd} failed: {ex.Message}");
+        }
+    }
+
+    return true;
+}
 
         public List<Command> GetSubcommands()
         {
