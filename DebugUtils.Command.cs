@@ -37,6 +37,18 @@ public partial class DebugUtils
         private Action<SubcommandBuilder> subCommandBuilder;
         private Action<Command> customDrawer = null;
 
+        //Just helping the user by showing more friendly type names for the common types, otherwise it would just show the raw type name which isn't as nice
+        private static string GetFriendlyTypeName(Type type)
+        {
+            if (type == typeof(float)) return "float";
+            if (type == typeof(int)) return "int";
+            if (type == typeof(bool)) return "bool";
+            if (type == typeof(string)) return "string";
+            return type.Name;
+        }
+
+
+
         private static readonly Dictionary<Type, Func<string, object>> StringToTypeConverters = new()
             {
                 { typeof(string), s => s },
@@ -128,9 +140,7 @@ public partial class DebugUtils
             {
                 return false;
             }
-
             string args = hasArgs ? text.Substring(cmd.Length).Trim() : string.Empty;
-
             if (commandType == CommandType.Group)
             {
                 if (!hasArgs)
@@ -156,35 +166,38 @@ public partial class DebugUtils
             }
             else if (commandType == CommandType.Value)
             {
-                if (args == "help")
+                try
                 {
-                    ShowSubcommandHelp();
-                }
-                else
-                {
-                    try
+                    if (hasArgs)
                     {
-                        if (hasArgs)
+                        var argStr = text.Substring(cmd.Length).Trim();
+                        if (valueType.IsEnum)
                         {
-                            var parser = StringToTypeConverters[valueType];
-                            setValue(parser(text.Substring(cmd.Length).Trim()));
+                            setValue(Enum.Parse(valueType, argStr, ignoreCase: true));
                         }
-                        else if (getValue == null)
+                        else if (StringToTypeConverters.TryGetValue(valueType, out var parser))
                         {
-                            Console.instance.Print($"(value is write only, can't show the current value");
+                            setValue(parser(argStr));
                         }
                         else
                         {
-                            Console.instance.Print($"Current value of {cmd} is {GetValueString().Replace("\\", "\\\\")}");
+                            throw new InvalidOperationException($"No parser registered for type {valueType}");
                         }
                     }
-                    catch (Exception ex)
+                    else if (getValue == null)
                     {
-                        Console.instance.Print($"{cmd} failed: {ex.Message}");
+                        Console.instance.Print($"(value is write only, can't show the current value");
+                    }
+                    else
+                    {
+                        ShowSubcommandHelp();
                     }
                 }
+                catch (Exception ex)
+                {
+                    Console.instance.Print($"{cmd} failed: {ex.Message}");
+                }
             }
-
             return true;
         }
 
@@ -292,6 +305,10 @@ public partial class DebugUtils
 
         public void ShowHelp()
         {
+            //I have to be hidding commands that are there for the GUI but
+            //I don't want them to be visible in the console command list since they aren't really commands
+            //and would just cause confusion if they show up there
+            if (string.IsNullOrEmpty(cmd)) return;  // Skip commands with null/empty names
             var helpString = $"<size=18><b><color=#00ffff>{GetFullCmdName()}</color></b></size>";
             if (range != null)
             {
@@ -304,16 +321,15 @@ public partial class DebugUtils
             }
             else if (valueType != null)
             {
-                helpString += " " + $"({valueType.Name})";
+                helpString += " " + $"({GetFriendlyTypeName(valueType)})";
             }
-
             if (getValue != null)
             {
                 helpString += $" -- {GetValueString()}";
             }
-
+            
             helpString += $" -- <size=15>{desc}</size>";
-
+            
             Console.instance.Print($"    " + helpString);
         }
 
@@ -333,7 +349,7 @@ public partial class DebugUtils
 
         public void ShowSubcommandHelp()
         {
-            ShowHelp();
+            Console.instance.Print($"<size=18><b><color=#00ffff>Available sub commands:</color></b></size>");//avoid self reference
             foreach (var subcmd in GetSubcommands())
             {
                 subcmd.ShowHelp();
